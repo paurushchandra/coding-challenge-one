@@ -1,0 +1,146 @@
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:util="http://www.springframework.org/schema/util" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+        http://www.springframework.org/schema/beans     
+        http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+        http://www.springframework.org/schema/util
+        http://www.springframework.org/schema/util/spring-util-4.0.xsd
+        ">
+
+
+
+	<bean id="regionFileProcessor" class="com.abide.coding.challenge.processor.FileProcessor">
+		<constructor-arg name="fileName" value="/input/england-regions.csv" />
+		<constructor-arg name="handler" ref="regionCacheBuilder" />
+		<constructor-arg name="mapper" ref="regionMapper" />
+		<constructor-arg name="excludeFirstRecord" value="true" />
+	</bean>
+
+	<bean id="regionMapper" class="com.abide.coding.challenge.mapper.RegionMapper" />
+	<util:map id="englandRegionCache" key-type="java.lang.String" value-type="com.abide.coding.challenge.model.Region" scope="singleton" />
+	<bean id="regionCacheBuilder" class="com.abide.coding.challenge.handler.RegionCacheBuilder" >
+		<constructor-arg name="cache" ref="englandRegionCache" />
+	</bean>
+
+	<bean id="prescriberFileProcessor" class="com.abide.coding.challenge.processor.FileProcessor">
+		<constructor-arg name="fileName" value="/input/T201202ADD REXT.CSV" />
+		<constructor-arg name="handler" ref="prescriberCompositeHandler" />
+		<constructor-arg name="mapper" ref="prescriberMapper" />
+		<constructor-arg name="excludeFirstRecord" value="false" />
+	</bean>
+
+	<bean id="prescriberMapper" class="com.abide.coding.challenge.mapper.PrescriberMapper" />
+	<util:map id="prescriberCache" key-type="java.lang.String" value-type="com.abide.coding.challenge.model.Prescriber"  scope="singleton" />
+	
+	<bean id="prescriberCompositeHandler" class="com.abide.coding.challenge.handler.CompositeHandler">
+		<constructor-arg name="handlers">
+			<util:list value-type="com.abide.coding.challenge.handler.Handler">
+				<ref bean="prescriberCacheBuilder" />
+				<ref bean="londonPrescriberAccumulator"/>
+			</util:list>
+		</constructor-arg>
+	</bean>
+
+	<bean id="prescriberCacheBuilder" class="com.abide.coding.challenge.handler.PrescriberCacheBuilder">
+		<constructor-arg name="cache" ref="prescriberCache" />
+	</bean>
+
+	<bean id="londonPrescriberAccumulator" class="com.abide.coding.challenge.handler.LocSpecPrescriberAccumulator">
+		<constructor-arg name="dataStore" ref="dataStore" />
+		<constructor-arg name="condition" ref="londonPrescriberCondition" />
+	</bean>
+
+	<bean id="dataStore" class="com.abide.coding.challenge.model.DataStore" scope="singleton" />
+
+	<bean id="londonPrescriberCondition" class="com.abide.coding.challenge.predicate.PrescriberLocationFilter">
+		<constructor-arg name="location" value="London" />
+	</bean>
+	
+
+	<bean id="prescriptionFileProcessor" class="com.abide.coding.challenge.processor.FileProcessor">
+		<constructor-arg name="fileName" value="/input/T201109PDP IEXT.CSV" />
+		<constructor-arg name="handler" ref="prescriptionQueueSender" />
+		<constructor-arg name="mapper" ref="prescriptionMapper" />
+		<constructor-arg name="excludeFirstRecord" value="true" />
+	</bean>
+
+	<bean id="prescriptionMapper" class="com.abide.coding.challenge.mapper.PrescriptionMapper" />
+
+	<bean id="prescriptionQueueSender" class="com.abide.coding.challenge.handler.PrescriptionQueueSender">
+		<constructor-arg name="queue" ref="prescriptionQueue" />
+	</bean>
+
+	<bean id="prescriptionQueue" class="java.util.concurrent.LinkedBlockingQueue" scope="singleton">
+		<constructor-arg value="10000" />
+	</bean>
+
+	<bean id="listenerContainer" class="com.abide.coding.challenge.listener.DefaultListenerContainer" init-method="start" destroy-method="shutdown">
+		<constructor-arg name="listenerBeanName" value="prescriptionListener" />
+		<constructor-arg name="numberOfListeners" value="4" />
+	</bean>
+
+	<bean id="prescriptionListener" class="com.abide.coding.challenge.listener.DefaultListener" scope="prototype" >
+		<constructor-arg name="queue" ref="prescriptionQueue" />
+		<constructor-arg name="messageListener" ref="prescriptionMessageListener" />
+	</bean>
+
+	<bean id="prescriptionMessageListener" class="com.abide.coding.challenge.listener.PrescriptionMessageListener">
+		<constructor-arg name="handler" ref="prescriptionCompositeHandler" />
+		<constructor-arg name="prescriptionMessageCounter" ref="prescriptionMessageCounter" />
+	</bean>
+
+	<bean id="prescriptionMessageCounter" class="java.util.concurrent.atomic.AtomicInteger" scope="singleton" >
+		<constructor-arg value="0" />
+	</bean>
+
+	<bean id="prescriptionCompositeHandler" class="com.abide.coding.challenge.handler.CompositeHandler">
+		<constructor-arg name="handlers">
+			<util:list value-type="com.abide.coding.challenge.handler.Handler">
+				<ref bean="prescriptionActAvgCostAccumulator"/>
+<!-- 				<ref bean="postCodeSpendingAccumulator"/> -->
+<!-- 				<ref bean="flucloxacillinAvgPriceAccumulator"/> -->
+<!-- 				<ref bean="prescriptionByRegionAccumulator"/> -->
+			</util:list>
+		</constructor-arg>
+	</bean>
+
+	<bean id="prescriptionActAvgCostAccumulator" class="com.abide.coding.challenge.handler.publisher.PrescriptionActAvgCostAccumulator">
+		<constructor-arg name="dataStore" ref="dataStore" />
+		<constructor-arg name="condition" ref="peppermintOilCondition" />
+	</bean>
+
+	<bean id="peppermintOilCondition" class="com.abide.coding.challenge.predicate.PrescriptionBnfNameFilter">
+		<constructor-arg name="bnfName" value="Peppermint Oil" />
+	</bean>
+	
+	<bean id="postCodeSpendingAccumulator" class="com.abide.coding.challenge.handler.PostCodeSpendingAccumulator">
+		<constructor-arg name="dataStore" ref="dataStore" />
+		<constructor-arg name="prescriberCache" ref="prescriberCache" />
+	</bean>
+	
+	<bean id="flucloxacillinAvgPriceAccumulator" class="com.abide.coding.challenge.handler.PrescriptionAvgPriceAccumulator">
+		<constructor-arg name="dataStore" ref="dataStore" />
+		<constructor-arg name="condition" ref="flucloxacillinCondition" />
+		<constructor-arg name="regionQueryService" ref="regionQueryService" />
+	</bean>
+
+	<bean id="flucloxacillinCondition" class="com.abide.coding.challenge.predicate.PrescriptionBnfNameContainsFilter">
+		<constructor-arg name="nameContains" value="Flucloxacillin" />
+		<constructor-arg name="excludeName" value="Co-Fluampicil" />
+	</bean>
+
+	<bean id="regionQueryService" class="com.abide.coding.challenge.service.RegionQueryService">
+		<constructor-arg name="prescriberCache" ref="prescriberCache" />
+		<constructor-arg name="regionCache" ref="englandRegionCache" />
+	</bean>
+
+	<bean id="prescriptionByRegionAccumulator" class="com.abide.coding.challenge.handler.PrescriptionByRegionAccumulator">
+		<constructor-arg name="dataStore" ref="dataStore" />
+		<constructor-arg name="regionQueryService" ref="regionQueryService" />
+	</bean>
+	
+	<bean id="reportGenerationService" class="com.abide.coding.challenge.service.ReportGenerationService">
+		<constructor-arg name="dataStore" ref="dataStore" />
+	</bean>
+
+</beans>
